@@ -1,0 +1,36 @@
+[tool.poetry]
+name = "volatility"
+version = "0.1.0"
+description = "Code for the paper Volatility is (mostly) path-dependent - Guyon, Lekeufack (2022)."
+authors = ["Juraj Zelman <zelman.juraj@gmail.com>"]
+packages = [{include = "<ml_finance>"}]
+
+[tool.poetry.dependencies]
+python = "^3.11.0"
+
+[tool.poetry.group.dev.dependencies]
+pre-commit = "^3.0.4"
+mypy = "^1.0.0"
+
+[tool.poetry.group.test.dependencies]
+pytest = "^7.2.1"
+pytest-cov = "^4.0.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 80
+safe = true
+
+[tool.isort]
+profile = "black"
+skip_gitignore = true
+line_length = 80
+
+[tool.coverage.report]
+exclude_lines = ["pragma: no cover"]
+
+[tool.bandit]
+exclude_dirs = ["tests"]
