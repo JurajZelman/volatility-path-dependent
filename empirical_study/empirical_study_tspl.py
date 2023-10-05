@@ -19,6 +19,12 @@ from empirical_study.utils import (
     split_data,
 )
 
+train_start_date = pd.to_datetime("2000-01-01")  # pd.to_datetime('2008-01-01')
+test_start_date = pd.to_datetime("2019-01-01")
+test_end_date = pd.to_datetime("2022-05-15")
+dt = 1 / 252
+identity = power_to(1)
+
 
 def deriv_alpha_shift_power_law(t, alpha, delta):
     """
@@ -215,11 +221,18 @@ def optimal_parameters_GJR_parent(
     X_test = test_data.loc[:, cols]
     vol_train = train_data[vol]
     vol_test = test_data[vol]
-    target_transform = lambda x: power_to(p)(x)
-    inv_target_transform = lambda x: power_to(1 / p)(x)
+    # target_transform = lambda x: power_to(p)(x)
+
+    def target_transform(x):
+        return power_to(p)(x)
+
+    # inv_target_transform = lambda x: power_to(1 / p)(x)
+
+    def inv_target_transform(x):
+        return power_to(1 / p)(x)
 
     y_train = target_transform(vol_train)
-    y_test = target_transform(vol_test)
+    # y_test = target_transform(vol_test)
 
     def prediction(parameters, returns, return_features=True, parent=parent):
         # parameters = [beta_0, beta_1, c, alpha, delta]
@@ -490,7 +503,7 @@ def find_optimal_parameters_tspl(
     :param setting: list of tuples. Each tuple is either a (i,j) or
             (i, (j1, dots, jk)).
     This means that each R_i^{j_l} is a feature of the regression, where
-        R_i= \sum_t K(t) r_t^i
+        R_i= / sum_t K(t) r_t^i
     :param optimize_delta: bool. Default True, If delta should be optimized or
         be fixed. It is better to optimize
     :param delta_value: float. Fixed value of delta
@@ -535,12 +548,19 @@ def find_optimal_parameters_tspl(
     X_test = test_data.loc[:, cols]
     vol_train = train_data["vol"]
     vol_test = test_data["vol"]
-    target_transform = lambda x: power_to(p)(x)
-    inv_target_transform = lambda x: power_to(1 / p)(x)
+
+    # target_transform = lambda x: power_to(p)(x)
+    def target_transform(x):
+        return power_to(p)(x)
+
+    def inv_target_transform(x):
+        return power_to(1 / p)(x)
+
+    # inv_target_transform = lambda x: power_to(1 / p)(x)
 
     y_train = target_transform(vol_train)
     y_train = y_train
-    y_test = target_transform(vol_test)
+    # y_test = target_transform(vol_test)
 
     def residuals(parameters):
         # return - y_train + linear_of_kernels(returns=X_train,

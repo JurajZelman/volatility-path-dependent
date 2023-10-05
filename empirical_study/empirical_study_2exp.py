@@ -19,6 +19,12 @@ from empirical_study.empirical_study_tspl import (
     split_data,
 )
 
+train_start_date = pd.to_datetime("2000-01-01")  # pd.to_datetime('2008-01-01')
+test_start_date = pd.to_datetime("2019-01-01")
+test_end_date = pd.to_datetime("2022-05-15")
+dt = 1 / 252
+identity = power_to(1)
+
 
 def exp_kernel(t, lam, c=1):
     return c * lam * np.exp(-lam * t)
@@ -190,7 +196,7 @@ def find_optimal_parameters_exp(
     :param setting: list of tuples. Each tuple is either a (i,j) or (i, (j1,
         dots, jk)).
     This means that each R_i^{j_l} is a feature of the regression, where
-        R_i= \sum_t K(t) r_t^i
+        R_i= /sum_t K(t) r_t^i
     :param train_start_date: datetime. Default May 15 2012. When to start the
         train dataset
     :param test_start_date: datetime. Default Jan 01 2019. When to start the
@@ -231,8 +237,15 @@ def find_optimal_parameters_exp(
     X_test = test_data.loc[:, cols]
     vol_train = train_data["vol"]
     vol_test = test_data["vol"]
-    target_transform = lambda x: power_to(p)(x)
-    inv_target_transform = lambda x: power_to(1 / p)(x)
+
+    def target_transform(x):
+        return power_to(p)(x)
+
+    # target_transform = lambda x: power_to(p)(x)
+    # inv_target_transform = lambda x: power_to(1 / p)(x)
+
+    def inv_target_transform(x):
+        return power_to(1 / p)(x)
 
     y_train = target_transform(vol_train)
     norm_coeff = 1  # ** p
