@@ -12,7 +12,7 @@ from matplotlib.patches import Patch
 # from mpl_toolkits import mplot3d
 from sklearn.linear_model import LinearRegression
 
-from empirical_study.utils import dt, shifted_power_law
+from volatility.utils import dt, shifted_power_law
 
 lowess = sm.nonparametric.lowess
 

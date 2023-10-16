@@ -1,5 +1,6 @@
 from collections import OrderedDict
 from collections.abc import Iterable
+from datetime import datetime
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -25,33 +26,34 @@ identity = power_to(1)
 
 
 def perform_empirical_study(
-    index,
-    vol,
-    setting=((1, 1), (2, 1 / 2)),
-    # tspl=True,
-    p=1,
-    train_start_date=train_start_date,
-    test_start_date=test_start_date,
-    test_end_date=test_end_date,
-    max_delta=1000,
+    index: pd.Series,
+    vol: pd.Series,
+    setting: list[tuple] = [(1, 1), (2, 1 / 2)],
+    p: int = 1,
+    train_start_date: datetime = train_start_date,
+    test_start_date: datetime = test_start_date,
+    test_end_date: datetime = test_end_date,
+    max_delta: int = 1000,
 ):
     """
     Find the best parameters for the model defined by setting and p (see
-        `historical_analysis.ipynb` on how it is defined)
-    :param index: pd.Series. Timeseries of historical price of the index
-    :param vol: pd.Series. Timeseries of historical price of the volatility
-    :param setting: tuple of tuples. Defines the model
-    :param tspl: bool. If True, the kernel is a timeshifted powerlaw,otherwise
-        it is a convex combination of two exponentials
-    :param p: float. the model will fit vol^p
-    :param train_start_date: date. First date used for training the model. Note
-        that it must be bigger than the smaller date of index + max_delta
-        business days
-    :param test_start_date: date. First date of test set
-    :param test_end_date: date. Last date of test set
-    :param max_delta: int. number of business days used to computed the weighted
-        averages of past returns.
-    :return: a dictionary containing the scores, optimal parameters, weighted
+    `historical_analysis.ipynb` on how it is defined)
+
+    Args:
+    index: Historical timeseries of the index.
+        vol: Historical timeseries of the volatility index.
+        setting: List of tuples with settings, each tuple is either a (i, j) or
+            (i, (j1, ..., jk)). This means that each R_i^{j_l} is a feature of
+            the regression, where R_i = sum_t K(t) r_t^i.
+        p: Target of the prediction of vol^p (usually `1` or `2`).
+        train_start_date: When to start the train dataset.
+        test_start_date: When to start the test dataset.
+        test_end_date: When to end the test dataset.
+        max_delta: Number of days used to compute the past returns for each day.
+            Defaults to `1000`.
+
+    Returns:
+        A dictionary containing the scores, optimal parameters, weighted
         averages of past returns and predictions on both the train and test set.
     """
     learner = find_optimal_parameters_tspl
@@ -85,159 +87,75 @@ def perform_empirical_study(
 
 
 def find_optimal_parameters_tspl(
-    vol,
-    index,
-    p=1,
-    setting=((1, 1), (2, 1 / 2)),
-    optimize_delta=True,
-    delta_value=None,
-    train_start_date=train_start_date,
-    test_start_date=test_start_date,
-    test_end_date=test_end_date,
-    max_delta=1000,
-    fixed_initial=False,
-    use_jacob=True,
+    vol: pd.Series,
+    index: pd.Series,
+    p: int = 1,
+    setting: list[tuple] = [(1, 1), (2, 1 / 2)],
+    optimize_delta: bool = True,
+    delta_value: float = None,
+    train_start_date: datetime = train_start_date,
+    test_start_date: datetime = test_start_date,
+    test_end_date: datetime = test_end_date,
+    max_delta: int = 1000,
+    fixed_initial: bool = False,
+    use_jacob: bool = True,
     init_parameters=None,
 ):
     """
     Computes the optimal parameters to linearly estimate vol^p using the
-        previous returns of index.
-    :param vol: str. Name of the predicted volatility
-    :param index: str. Name of the market index
-    :param p: int (usually 1 or 2). Target of the prediction of vol^p
-    :param setting: list of tuples. Each tuple is either a (i,j) or
-            (i, (j1, dots, jk)).
-    This means that each R_i^{j_l} is a feature of the regression, where
-        R_i= / sum_t K(t) r_t^i
-    :param optimize_delta: bool. Default True, If delta should be optimized or
-        be fixed. It is better to optimize
-    :param delta_value: float. Fixed value of delta
-    :param train_start_date: datetime. Default May 15 2012. When to start the
-        train dataset
-    :param test_start_date: datetime. Default Jan 01 2019. When to start the
-        test dataset
-    :param test_end_date: datetime. Default May 15 2022. When to end the test
-        dataset
-    :param max_delta: int, default 1000. Number of days used to compute the past
-        returns for each day
-    :param fixed_initial: bool. If True, uses the initial parameters given in
-        init_parameters
-    :param use_jacob: bool If True, uses the analytical jacobian. Otherwise, it
-        is estimated by the function.
-    :param init_parameters: array. Initial parameters to provide if fixed
-        initial is True
-    :return: dictionary containing the solution from the scipy optimization, the
-        optimal parameters, the features on the train and test set,
-    the train and test r2 and RMSE, the prediction on the train and test set
+    previous returns of index.
+
+    Args:
+        vol: Historical timeseries of the volatility index.
+        index: Historical timeseries of the index.
+        p: Target of the prediction of vol^p (usually `1` or `2`).
+        setting: List of tuples with settings, each tuple is either a (i, j) or
+            (i, (j1, ..., jk)). This means that each R_i^{j_l} is a feature of
+            the regression, where R_i = sum_t K(t) r_t^i.
+        optimize_delta: If True, the delta parameter is optimized. Otherwise,
+            it is fixed. It is better to optimize it.
+        delta_value: Fixed value of delta.
+        train_start_date: When to start the train dataset.
+        test_start_date: When to start the test dataset.
+        test_end_date: When to end the test dataset.
+        max_delta: Number of days used to compute the past returns for each day.
+            Defaults to `1000`.
+        fixed_initial: If True, uses the initial parameters given in the
+            argument `init_parameters`.
+        use_jacob: If True, uses the analytical jacobian. Otherwise, it is
+            estimated by the function.
+        init_parameters: Initial parameters to provide if fixed initial is True.
+
+    Returns:
+        Dictionary containing the solution from the scipy optimization, the
+        optimal parameters, the features on the train and test set, the train
+        and test r2 and RMSE, the prediction on the train and test set.
     """
+    # Set the initial parameters
     if optimize_delta:
         delta_value = None
-    setting = [
-        (i, p if isinstance(p, Iterable) else (p,)) for i, p in setting
-    ]  # turn the single values into tuples
+    setting = [(i, p if isinstance(p, Iterable) else (p,)) for i, p in setting]
 
+    # Create a dataframe of features
     df = dataframe_of_returns(index=index, vol=vol, max_delta=max_delta)
 
-    # Remove NaNs on volatility (happens for vstoxx for some reason)
-
+    # Split the data into train and test
     train_data, test_data = split_data(
         df,
         train_start_date=train_start_date,
         test_start_date=test_start_date,
         test_end_date=test_end_date,
     )
-    # train_data.dropna(inplace=True)
-    # test_data.dropna(inplace=True)
     train_data = train_data.dropna()
     test_data = test_data.dropna()
-
     cols = [f"r_(t-{lag})" for lag in range(max_delta)]
     X_train = train_data.loc[:, cols]
     X_test = test_data.loc[:, cols]
     vol_train = train_data["vol"]
     vol_test = test_data["vol"]
+    y_train = target_transform(vol_train, p)
 
-    # target_transform = lambda x: power_to(p)(x)
-    def target_transform(x):
-        return power_to(p)(x)
-
-    def inv_target_transform(x):
-        return power_to(1 / p)(x)
-
-    # inv_target_transform = lambda x: power_to(1 / p)(x)
-
-    y_train = target_transform(vol_train)
-    y_train = y_train
-    # y_test = target_transform(vol_test)
-
-    def residuals(parameters):
-        # return - y_train + linear_of_kernels(returns=X_train,
-        #   setting=setting, parameters=parameters,
-        #                                      func_power_law=func_power_law)
-        pred = linear_of_kernels(
-            returns=X_train, setting=setting, parameters=parameters
-        )
-        return -y_train + pred
-
-    def jacobian(parameters):
-        train_features, pred_train = linear_of_kernels(
-            returns=X_train,
-            setting=setting,
-            parameters=parameters,
-            return_features=True,
-        )
-        # train_features containts the R_i^j
-        splitted_parameters = split_parameters(
-            parameters=parameters, setting=setting
-        )
-        (
-            intercept,
-            betas,
-            alphas,
-            others,
-        ) = splitted_parameters  # others is either deltas or kappas
-
-        jacob = np.zeros((len(parameters), len(y_train)))
-        jacob[0] = 1  # For the intercept
-
-        # df/dbeta
-        iter = 1
-        for i, ks in setting:
-            for j in ks:
-                jacob[iter] = train_features[i][j]
-                iter += 1
-
-        alpha_jac = np.zeros((n_alphas, len(y_train)))
-        delta_jac = np.zeros((n_alphas, len(y_train)))
-        sub_iter = 0  # iterates on the betas
-        for iter, (i, ks) in enumerate(setting):
-            R_i = power_to(1 / ks[0])(train_features[i][ks[0]])
-            dR_i_dalpha = compute_kernel_weighted_sum(
-                x=X_train,
-                params=[alphas[iter], others[iter]],
-                func_power_law=deriv_alpha_shift_power_law,
-                transform=power_to(i),
-                result_transform=identity,
-            )
-            dR_i_ddelta = compute_kernel_weighted_sum(
-                x=X_train,
-                params=[alphas[iter], others[iter]],
-                func_power_law=deriv_delta_shift_power_law,
-                transform=power_to(i),
-                result_transform=identity,
-            )
-            coeff = np.full_like(y_train, 0)
-            for j in ks:
-                coeff += j * betas[sub_iter] * power_to(j - 1)(R_i)
-                sub_iter += 1
-            alpha_jac[iter] = coeff * dR_i_dalpha
-            delta_jac[iter] = coeff * dR_i_ddelta
-
-        jacob[-2 * n_alphas : -n_alphas] = alpha_jac
-        jacob[-n_alphas:] = delta_jac
-        # return (power_to(1/p - 1)(pred_train.values) / p * jacob).T
-        return jacob.T
-
+    # Compute the initial parameters used as the initial guess for the optimizer
     size_parameters = 1 + np.sum([len(j_s) + 2 for i, j_s in setting])
     lower_bound = np.full(size_parameters, -np.inf)
     upper_bound = np.full(size_parameters, np.inf)
@@ -256,8 +174,6 @@ def find_optimal_parameters_tspl(
 
     lower_bound[-2 * n_alphas : -n_alphas] = 0  # force non-negative alphas
     upper_bound[-2 * n_alphas : -n_alphas] = 10
-
-    # Non negative deltas
     lower_bound[-n_alphas:] = dt / 100  # force non-negative deltas
     eps = 1e-4
     if not optimize_delta:
@@ -267,32 +183,29 @@ def find_optimal_parameters_tspl(
         upper_bound[-n_alphas:] = np.clip(
             initial_parameters[-n_alphas:] * (1 + eps), dt * (1 + eps), None
         )
-
     if init_parameters is not None:
         initial_parameters = init_parameters
-
     initial_parameters = np.clip(initial_parameters, lower_bound, upper_bound)
 
-    # print('initial parameters', initial_parameters)
-    initial_pred_train = linear_of_kernels(
-        returns=X_train,
-        setting=setting,
-        parameters=initial_parameters,
-        return_features=False,
-    )
-    initial_pred_test = linear_of_kernels(
-        returns=X_test,
-        setting=setting,
-        parameters=initial_parameters,
-        return_features=False,
-    )
+    # initial_pred_train = linear_of_kernels(
+    #     returns=X_train,
+    #     setting=setting,
+    #     parameters=initial_parameters,
+    #     return_features=False,
+    # )
+    # initial_pred_test = linear_of_kernels(
+    #     returns=X_test,
+    #     setting=setting,
+    #     parameters=initial_parameters,
+    #     return_features=False,
+    # )
 
-    initial_pred_train = np.clip(initial_pred_train, 0, None)
-    initial_pred_test = np.clip(initial_pred_test, 0, None)
-    initial_vol_pred_train = inv_target_transform(initial_pred_train)
-    initial_vol_pred_test = inv_target_transform(initial_pred_test)
-    # else:
-    #     initial_parameters = initial_parameters[:2*len(setting)+1]
+    # initial_pred_train = np.clip(initial_pred_train, 0, None)
+    # initial_pred_test = np.clip(initial_pred_test, 0, None)
+    # initial_vol_pred_train = inv_target_transform(initial_pred_train, p)
+    # initial_vol_pred_test = inv_target_transform(initial_pred_test, p)
+
+    # Compute the optimal parameters
     jacob = jacobian if use_jacob else "2-point"
     sol = least_squares(
         residuals,
@@ -300,6 +213,7 @@ def find_optimal_parameters_tspl(
         method="trf",
         bounds=(lower_bound, upper_bound),
         jac=jacob,
+        args=(X_train, y_train, setting, n_alphas),
     )
     opt_params = sol["x"]
     split_opt_params = split_parameters(parameters=opt_params, setting=setting)
@@ -318,6 +232,7 @@ def find_optimal_parameters_tspl(
         norm_per_i[i] = norm_const
         norm_constants.extend(norm_const)
 
+    # Compute the predicted values
     train_features, pred_train = linear_of_kernels(
         returns=X_train,
         setting=setting,
@@ -337,8 +252,10 @@ def find_optimal_parameters_tspl(
 
     pred_train = np.clip(pred_train, 0, None)
     pred_test = np.clip(pred_test, 0, None)
-    vol_pred_train = inv_target_transform(pred_train)
-    vol_pred_test = inv_target_transform(pred_test)
+    vol_pred_train = inv_target_transform(pred_train, p)
+    vol_pred_test = inv_target_transform(pred_test, p)
+
+    # Process the features
     train_features = OrderedDict(
         [
             (key, pd.DataFrame(train_features[key]) / norm_per_i[key])
@@ -386,26 +303,121 @@ def find_optimal_parameters_tspl(
         "initial_parameters": {
             keys[i]: initial_parameters[i] for i in range(len(keys))
         },
-        "initial_train_rmse": mean_squared_error(
-            y_true=vol_train, y_pred=initial_vol_pred_train, squared=False
-        ),
-        "initial_test_rmse": mean_squared_error(
-            y_true=vol_test, y_pred=initial_vol_pred_test, squared=False
-        ),
-        "initial_train_r2": r2_score(
-            y_true=vol_train, y_pred=initial_vol_pred_train
-        ),
-        "initial_test_r2": r2_score(
-            y_true=vol_test, y_pred=initial_vol_pred_test
-        ),
+        # "initial_train_rmse": mean_squared_error(
+        #     y_true=vol_train, y_pred=initial_vol_pred_train, squared=False
+        # ),
+        # "initial_test_rmse": mean_squared_error(
+        #     y_true=vol_test, y_pred=initial_vol_pred_test, squared=False
+        # ),
+        # "initial_train_r2": r2_score(
+        #     y_true=vol_train, y_pred=initial_vol_pred_train
+        # ),
+        # "initial_test_r2": r2_score(
+        #     y_true=vol_test, y_pred=initial_vol_pred_test
+        # ),
     }
     return ans
+
+
+def target_transform(x: pd.Series, p: int):
+    """
+    Transform the target variable (volatility) to vol^p.
+
+    Args:
+        x: Target variable (volatility) to be transformed/
+        p: Power to which the target variable is transformed.
+
+    Returns:
+        Transformed target variable.
+    """
+    return power_to(p)(x)
+
+
+def inv_target_transform(x: pd.Series, p: int):
+    """
+    Inverse transform the target variable (volatility) from vol^p to vol.
+
+    Args:
+        x: Target variable (volatility) to be inverse transformed.
+        p: Power to which the target variable was transformed.
+
+    Returns:
+        Inverse transformed target variable.
+    """
+    return power_to(1 / p)(x)
+
+
+def residuals(parameters, X_train, y_train, setting, n_alphas):
+    pred = linear_of_kernels(
+        returns=X_train, setting=setting, parameters=parameters
+    )
+    return -y_train + pred
+
+
+def jacobian(parameters, X_train, y_train, setting, n_alphas):
+    train_features, pred_train = linear_of_kernels(
+        returns=X_train,
+        setting=setting,
+        parameters=parameters,
+        return_features=True,
+    )
+    # train_features containts the R_i^j
+    splitted_parameters = split_parameters(
+        parameters=parameters, setting=setting
+    )
+    (
+        intercept,
+        betas,
+        alphas,
+        others,
+    ) = splitted_parameters  # others is either deltas or kappas
+
+    jacob = np.zeros((len(parameters), len(y_train)))
+    jacob[0] = 1  # For the intercept
+
+    # df/dbeta
+    iter = 1
+    for i, ks in setting:
+        for j in ks:
+            jacob[iter] = train_features[i][j]
+            iter += 1
+
+    alpha_jac = np.zeros((n_alphas, len(y_train)))
+    delta_jac = np.zeros((n_alphas, len(y_train)))
+    sub_iter = 0  # iterates on the betas
+    for iter, (i, ks) in enumerate(setting):
+        R_i = power_to(1 / ks[0])(train_features[i][ks[0]])
+        dR_i_dalpha = compute_kernel_weighted_sum(
+            x=X_train,
+            params=[alphas[iter], others[iter]],
+            func_power_law=deriv_alpha_shift_power_law,
+            transform=power_to(i),
+            result_transform=identity,
+        )
+        dR_i_ddelta = compute_kernel_weighted_sum(
+            x=X_train,
+            params=[alphas[iter], others[iter]],
+            func_power_law=deriv_delta_shift_power_law,
+            transform=power_to(i),
+            result_transform=identity,
+        )
+        coeff = np.full_like(y_train, 0)
+        for j in ks:
+            coeff += j * betas[sub_iter] * power_to(j - 1)(R_i)
+            sub_iter += 1
+        alpha_jac[iter] = coeff * dR_i_dalpha
+        delta_jac[iter] = coeff * dR_i_ddelta
+
+    jacob[-2 * n_alphas : -n_alphas] = alpha_jac
+    jacob[-n_alphas:] = delta_jac
+    return jacob.T
 
 
 def linear_of_kernels(returns, setting, parameters, return_features=False):
     """
     Do the prediction. Compute the linear function of the kernel weighted
-        averages of transformed returns
+    averages of transformed returns.
+
     :param returns: np.array
     :param setting: list
     :param parameters: list of parameters (alpha, delta, betas)
@@ -434,7 +446,18 @@ def linear_of_kernels(returns, setting, parameters, return_features=False):
     return ans
 
 
-def split_parameters(parameters, setting):
+def split_parameters(parameters: np.array, setting: list[tuple]) -> list:
+    """
+    Split the aggregated list of parameters from the optimizer into intercept,
+    betas, alphas and deltas.
+
+    Args:
+        parameters: An array of parameters.
+        setting: The setting of the model.
+
+    Returns:
+        A list containing the intercept, betas, alphas and deltas.
+    """
     n_alphas = len(setting)
     deltas = parameters[-n_alphas:]
     alphas = parameters[-2 * n_alphas : -n_alphas]
@@ -450,8 +473,6 @@ def compute_features_tspl(returns, setting, splitted_parameters):
         alphas,
         others,
     ) = splitted_parameters  # others is either deltas or kappas
-    # assert len(splitted_parameters[0]) == len(setting) and
-    #   len(splitted_parameters[1]) == len(setting)
     features = OrderedDict()
     for k, key in enumerate(setting):
         i, js = key

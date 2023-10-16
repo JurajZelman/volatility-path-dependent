@@ -1,3 +1,5 @@
+from datetime import datetime
+
 import numpy as np
 import pandas as pd
 
@@ -8,11 +10,30 @@ test_end_date = pd.to_datetime("2022-05-15")
 dt = 1 / 252
 
 
-def negative_part(x):
-    return np.clip(-x, 0, None)
+def negative_part(x: np.array):
+    """
+    Returns the negative part of x, i.e. max(-x, 0).
+
+    Args:
+        x: A numpy array of values to compute the negative part of.
+
+    Returns:
+        The negative part of x.
+    """
+    return np.maximum(-x, 0)
 
 
-def power_to(p):
+def power_to(p: float):
+    """
+    Returns a function that computes the power of the input.
+
+    Args:
+        p: The power to compute.
+
+    Returns:
+        A function that computes the power of the input.
+    """
+
     def f(x):
         if p in (-1, -2):
             return negative_part(x) ** np.abs(p)
@@ -27,15 +48,15 @@ def power_to(p):
     return f
 
 
-squared = power_to(2)
-sqrt = power_to(0.5)
-identity = power_to(1)
-
-
 def compute_kernel_weighted_sum(
-    x, params, func_power_law, transform=identity, result_transform=identity
+    x: np.array,
+    params: np.array,
+    func_power_law: callable,
+    transform: callable = power_to(1),
+    result_transform: callable = power_to(1),
 ):
     """
+    TODO: Computes the weighted averages of the transform(x) with weights
 
     :param x: np.array of shape (n_elements, n_timestamps). Default: returns
         ordered from the most recent to the oldest
@@ -59,18 +80,43 @@ def shifted_power_law(t, alpha, delta):
     return (t + delta) ** (-alpha)
 
 
-def data_between_dates(data, start_date, end_date):
+def data_between_dates(
+    data: pd.DataFrame, start_date: datetime, end_date: datetime
+) -> pd.DataFrame:
+    """
+    Select the data between two dates.
+
+    Args:
+        data: Data frame to be split.
+        start_date: Initial date of the split.
+        end_date: Final date of the split.
+
+    Returns:
+        A data frame with the data between the two dates.
+    """
     start_date = pd.to_datetime(start_date)
     end_date = pd.to_datetime(end_date)
     return data.loc[start_date:end_date]
 
 
 def split_data(
-    data,
-    train_start_date=train_start_date,
-    test_start_date=test_start_date,
-    test_end_date=test_end_date,
-):
+    data: pd.DataFrame,
+    train_start_date: datetime,
+    test_start_date: datetime,
+    test_end_date: datetime,
+) -> pd.DataFrame:
+    """
+    Split the data into train and test sets.
+
+    Args:
+        data: Historical timeseries with index market prices.
+        train_start_date: Start date of the train set.
+        test_start_date: Start date of the test set.
+        test_end_date: End date of the test set.
+
+    Returns:
+        A tuple with the train and test sets.
+    """
     train_data = data_between_dates(data, train_start_date, test_start_date)
     test_data = data_between_dates(data, test_start_date, test_end_date)
     return train_data, test_data
@@ -80,20 +126,19 @@ def dataframe_of_returns(
     index: pd.Series, vol: pd.Series, max_delta: int = 1000
 ) -> pd.DataFrame:
     """
-    constructs a dataframe where each row contains the past max_delta one-day
-        returns from the timestamp corresponding to the index of the dataframe.
-    :param index: pd.Series of historical market prices of index
-    :param vol: pd.Series of historical market prices of volatility index or
-        realized vol
-    :param max_delta: int number of past returns to use
-    :param data: pd.DataFrame
-    :return:pd.DataFrame
+    Construct a dataframe where each row contains the past max_delta one-day
+    returns from the timestamp corresponding to the index of the dataframe.
+
+    Args:
+        index: Historical timeseries with index market prices.
+        vol: Historical timeseries with index volatility.
+        max_delta: Number of past returns to use.
+
+    Returns:
+        A dataframe with the past returns.
     """
     df = pd.DataFrame.from_dict({"index": index, "vol": vol})
     df.dropna(subset=["index"], inplace=True)  # remove closed days
-
-    # df.loc[1:, "return_1d"] = np.diff(df["index"]) / df["index"].iloc[1:]
-    # Add new empty column
     df["return_1d"] = np.nan
 
     df.iloc[1:, df.columns.get_loc("return_1d")] = (
