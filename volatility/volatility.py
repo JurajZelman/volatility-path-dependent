@@ -25,6 +25,177 @@ dt = 1 / 252
 identity = power_to(1)
 
 
+def get_predictions(
+    vol: pd.Series,
+    index: pd.Series,
+    p: int = 1,
+    setting: list[tuple] = [(1, 1), (2, 1 / 2)],
+    optimize_delta: bool = True,
+    delta_value: float = None,
+    max_delta: int = 1000,
+    fixed_initial: bool = False,
+    use_jacob: bool = True,
+    init_parameters=None,
+):
+    """
+    Computes the optimal parameters to linearly estimate vol^p using the
+    previous returns of index.
+
+    Args:
+        vol: Historical timeseries of the volatility index.
+        index: Historical timeseries of the index.
+        p: Target of the prediction of vol^p (usually `1` or `2`).
+        setting: List of tuples with settings, each tuple is either a (i, j) or
+            (i, (j1, ..., jk)). This means that each R_i^{j_l} is a feature of
+            the regression, where R_i = sum_t K(t) r_t^i.
+        optimize_delta: If True, the delta parameter is optimized. Otherwise,
+            it is fixed. It is better to optimize it.
+        delta_value: Fixed value of delta.
+        train_start_date: When to start the train dataset.
+        test_start_date: When to start the test dataset.
+        test_end_date: When to end the test dataset.
+        max_delta: Number of days used to compute the past returns for each day.
+            Defaults to `1000`.
+        fixed_initial: If True, uses the initial parameters given in the
+            argument `init_parameters`.
+        use_jacob: If True, uses the analytical jacobian. Otherwise, it is
+            estimated by the function.
+        init_parameters: Initial parameters to provide if fixed initial is True.
+
+    Returns:
+        Dictionary containing the solution from the scipy optimization, the
+        optimal parameters, the features on the train and test set, the train
+        and test r2 and RMSE, the prediction on the train and test set.
+    """
+    # Set the initial parameters
+    if optimize_delta:
+        delta_value = None
+    setting = [(i, p if isinstance(p, Iterable) else (p,)) for i, p in setting]
+
+    # Create a dataframe of features
+    df = dataframe_of_returns(index=index, vol=vol, max_delta=max_delta)
+
+    # Split the data into train and test
+    train_data = df
+    train_data = train_data.dropna()
+    cols = [f"r_(t-{lag})" for lag in range(max_delta)]
+    X_train = train_data.loc[:, cols]
+    vol_train = train_data["vol"]
+    y_train = target_transform(vol_train, p)
+
+    # Compute the initial parameters used as the initial guess for the optimizer
+    size_parameters = 1 + np.sum([len(j_s) + 2 for i, j_s in setting])
+    lower_bound = np.full(size_parameters, -np.inf)
+    upper_bound = np.full(size_parameters, np.inf)
+    n_alphas = len(setting)
+
+    initial_parameters = np.full(size_parameters, 1.0)
+    if not fixed_initial:
+        initial_parameters = optimal_parameters_from_exponentials_tspl(
+            X=X_train,
+            y=y_train,
+            p=p,
+            setting=setting,
+            delta_value=delta_value,
+            plot=False,
+        )
+
+    lower_bound[-2 * n_alphas : -n_alphas] = 0  # force non-negative alphas
+    upper_bound[-2 * n_alphas : -n_alphas] = 10
+    lower_bound[-n_alphas:] = dt / 100  # force non-negative deltas
+    eps = 1e-4
+    if not optimize_delta:
+        lower_bound[-n_alphas:] = np.clip(
+            initial_parameters[-n_alphas:] * (1 - eps), dt, None
+        )
+        upper_bound[-n_alphas:] = np.clip(
+            initial_parameters[-n_alphas:] * (1 + eps), dt * (1 + eps), None
+        )
+    if init_parameters is not None:
+        initial_parameters = init_parameters
+    initial_parameters = np.clip(initial_parameters, lower_bound, upper_bound)
+
+    # Compute the optimal parameters
+    jacob = jacobian if use_jacob else "2-point"
+    sol = least_squares(
+        residuals,
+        initial_parameters,
+        method="trf",
+        bounds=(lower_bound, upper_bound),
+        jac=jacob,
+        args=(X_train, y_train, setting, n_alphas),
+    )
+    opt_params = sol["x"]
+    split_opt_params = split_parameters(parameters=opt_params, setting=setting)
+    split_opt_params = list(split_opt_params)
+
+    # Compute normalization constant of the kernels
+    norm_constants = []
+    norm_per_i = {}
+    for iter, (i, js) in enumerate(setting):
+        alpha = split_opt_params[2][iter]
+        delta = split_opt_params[3][iter]
+        weights = shifted_power_law(
+            np.arange(max_delta) * dt, alpha=alpha, delta=delta
+        )
+        norm_const = (np.sum(weights) * dt) ** np.array(js)
+        norm_per_i[i] = norm_const
+        norm_constants.extend(norm_const)
+
+    # Compute the predicted values
+    train_features, pred_train = linear_of_kernels(
+        returns=X_train,
+        setting=setting,
+        parameters=opt_params,
+        return_features=True,
+    )
+
+    split_opt_params[1] = split_opt_params[1] * np.array(
+        norm_constants
+    )  # add normalizer to the betas
+
+    pred_train = np.clip(pred_train, 0, None)
+    vol_pred_train = inv_target_transform(pred_train, p)
+
+    # Process the features
+    train_features = OrderedDict(
+        [
+            (key, pd.DataFrame(train_features[key]) / norm_per_i[key])
+            for key in train_features
+        ]
+    )
+    features_df = ordered_dict_to_dataframe_single(train_features, setting)
+    keys = ["beta_0"]
+    for i, j_s in setting:
+        if len(j_s) == 1:
+            keys.append(f"beta_{i}")
+        else:
+            keys.extend([f"beta_{i}{j}" for j in j_s])
+    keys.extend(
+        [f"alpha_{i}" for i, j_s in setting]
+        + [f"delta_{i}" for i, j_s in setting]
+    )
+
+    opt_params[1 : -2 * n_alphas] = split_opt_params[1]
+
+    ans = {
+        "sol": sol,
+        "opt_params": {keys[i]: opt_params[i] for i in range(len(keys))},
+        "setting": setting,
+        "p": p,
+        "train_pred": pd.Series(vol_pred_train, index=train_data.index),
+        "train_rmse": mean_squared_error(
+            y_true=vol_train, y_pred=vol_pred_train, squared=False
+        ),
+        "train_r2": r2_score(y_true=vol_train, y_pred=vol_pred_train),
+        "features": features_df,
+        "initial_parameters": {
+            keys[i]: initial_parameters[i] for i in range(len(keys))
+        },
+    }
+    return ans
+
+
 def perform_empirical_study(
     index: pd.Series,
     vol: pd.Series,
@@ -611,4 +782,19 @@ def ordered_dict_to_dataframe(train_features, test_features, setting):
             features[var_name] = pd.concat(
                 [train_features[i][j], test_features[i][j]]
             )
+    return pd.DataFrame(features).sort_index()
+
+
+def ordered_dict_to_dataframe_single(train_features, setting):
+    features = {}
+    for i, j_s in setting:
+        for j in j_s:
+            if j == 1:
+                var_name = f"R_{i}"
+            else:
+                var_name = f"R_{i}^{j}"
+            # features[var_name] = pd.concat(
+            #     [train_features[i][j], test_features[i][j]]
+            # )
+            features[var_name] = train_features[i][j]
     return pd.DataFrame(features).sort_index()
