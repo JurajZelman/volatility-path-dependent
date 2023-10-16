@@ -146,8 +146,10 @@ def find_optimal_parameters_tspl(
         test_start_date=test_start_date,
         test_end_date=test_end_date,
     )
-    train_data.dropna(inplace=True)
-    test_data.dropna(inplace=True)
+    # train_data.dropna(inplace=True)
+    # test_data.dropna(inplace=True)
+    train_data = train_data.dropna()
+    test_data = test_data.dropna()
 
     cols = [f"r_(t-{lag})" for lag in range(max_delta)]
     X_train = train_data.loc[:, cols]
