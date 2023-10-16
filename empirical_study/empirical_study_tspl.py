@@ -532,6 +532,7 @@ def find_optimal_parameters_tspl(
     ]  # turn the single values into tuples
 
     df = dataframe_of_returns(index=index, vol=vol, max_delta=max_delta)
+
     # Remove NaNs on volatility (happens for vstoxx for some reason)
 
     train_data, test_data = split_data(
