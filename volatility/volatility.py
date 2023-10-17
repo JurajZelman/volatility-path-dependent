@@ -1,3 +1,4 @@
+import copy
 from collections import OrderedDict
 from collections.abc import Iterable
 from datetime import datetime
@@ -25,9 +26,10 @@ dt = 1 / 252
 identity = power_to(1)
 
 
-def get_predictions(
-    vol: pd.Series,
-    index: pd.Series,
+def fit_model(
+    df: pd.DataFrame,
+    # vol: pd.Series,
+    # index: pd.Series,
     p: int = 1,
     setting: list[tuple] = [(1, 1), (2, 1 / 2)],
     optimize_delta: bool = True,
@@ -73,7 +75,7 @@ def get_predictions(
     setting = [(i, p if isinstance(p, Iterable) else (p,)) for i, p in setting]
 
     # Create a dataframe of features
-    df = dataframe_of_returns(index=index, vol=vol, max_delta=max_delta)
+    # df = dataframe_of_returns(index=index, vol=vol, max_delta=max_delta)
 
     # Split the data into train and test
     train_data = df
@@ -126,6 +128,7 @@ def get_predictions(
         args=(X_train, y_train, setting, n_alphas),
     )
     opt_params = sol["x"]
+    opt_params_original = copy.deepcopy(sol["x"])
     split_opt_params = split_parameters(parameters=opt_params, setting=setting)
     split_opt_params = list(split_opt_params)
 
@@ -181,6 +184,8 @@ def get_predictions(
     ans = {
         "sol": sol,
         "opt_params": {keys[i]: opt_params[i] for i in range(len(keys))},
+        # "opt_params": opt_params,
+        "opt_params_original": opt_params_original,
         "setting": setting,
         "p": p,
         "train_pred": pd.Series(vol_pred_train, index=train_data.index),

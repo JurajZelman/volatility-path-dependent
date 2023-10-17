@@ -117,7 +117,9 @@ def split_data(
     Returns:
         A tuple with the train and test sets.
     """
-    train_data = data_between_dates(data, train_start_date, test_start_date)
+    train_data = data_between_dates(
+        data, train_start_date, test_start_date - pd.offsets.Day(1)
+    )
     test_data = data_between_dates(data, test_start_date, test_end_date)
     return train_data, test_data
 
